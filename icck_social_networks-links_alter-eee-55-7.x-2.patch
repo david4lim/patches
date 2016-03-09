@@ -1,0 +1,13 @@
+diff --git a/icck_social_networks.module b/icck_social_networks.module
+index f95d2af..fab4db9 100755
+--- a/icck_social_networks.module
++++ b/icck_social_networks.module
+@@ -345,6 +345,8 @@ function _config_social_item_link($url, $tiny, $entity_type, $entity_id, $option
+     $config['data'] .= in_array( $_SERVER['HTTP_HOST'], $exception_web_server ) ? '' : "<div class='count $count'>".$total."</div>";
+   }
+ 
++  // Alter social network items
++  drupal_alter('icck_social_networks_item_links', $config, $layout);
+   return $config;
+ }
+ 
