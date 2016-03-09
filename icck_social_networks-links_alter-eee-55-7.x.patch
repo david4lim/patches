@@ -1,0 +1,14 @@
+diff --git a/icck_social_networks.module b/icck_social_networks.module
+index f95d2af..81d81cd 100755
+--- a/icck_social_networks.module
++++ b/icck_social_networks.module
+@@ -343,6 +343,9 @@ function _config_social_item_link($url, $tiny, $entity_type, $entity_id, $option
+     //$exception_web_server = array('www.noticiascaracol.com');
+     $exception_web_server = array('regionales.icck.net', 'www.noticiascaracol.com');
+     $config['data'] .= in_array( $_SERVER['HTTP_HOST'], $exception_web_server ) ? '' : "<div class='count $count'>".$total."</div>";
++
++    // Alter the item links used to render social networks
++    drupal_alter('icck_social_networks_item_links', $config, $layout);
+   }
+
+   return $config;
