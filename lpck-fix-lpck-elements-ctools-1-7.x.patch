@@ -1,0 +1,120 @@
+diff --git a/includes/lpck.lpck.admin.inc b/includes/lpck.lpck.admin.inc
+index d5c7908..0c949bf 100644
+--- a/includes/lpck.lpck.admin.inc
++++ b/includes/lpck.lpck.admin.inc
+@@ -148,7 +148,7 @@ function lpck_lpck_form($form, &$form_state, $lp_type_name, $lp_name = ''){
+   foreach ($elements as $element) {
+     $form_element       = array();
+     $form_state_element = array();
+-    $element_type       = $element->type;
++    $element_type       = $element->element_type;
+     if (isset($form['elements'][$element_type]['element'])){
+       $form_element = $form['elements'][$element_type]['element'];
+     }
+@@ -208,7 +208,7 @@ function lpck_lpck_form_validate($form, &$form_state){
+   $elements     = lpck_type_get_elements($lp_type_name);
+   foreach ($elements as $element) {
+ 
+-    $element_type = $element->type;
++    $element_type = $element->element_type;
+     if (module_hook($element->module, 'lpck_element_form_validate')) {
+       $form_element = $form_state_element = null;
+       if (isset($form['elements'][$element_type])){
+@@ -274,7 +274,7 @@ function lpck_lpck_form_submit($form, &$form_state){
+   $elements     = lpck_type_get_elements($lp_type_name);
+   foreach ($elements as $element) {
+ 
+-    $element_type = $element->type;
++    $element_type = $element->element_type;
+ 
+     if (module_hook($element->module, 'lpck_element_form_set')) {
+       $form_element = $form_state_element = null;
+diff --git a/includes/lpck.lpck_type.admin.inc b/includes/lpck.lpck_type.admin.inc
+index 5e17fb2..f906f65 100644
+--- a/includes/lpck.lpck_type.admin.inc
++++ b/includes/lpck.lpck_type.admin.inc
+@@ -22,7 +22,7 @@ function lpck_type_config_elements_form($form, &$form_state, $lp_type_name = NUL
+   foreach ($elements as $element) {
+     $form_element       = array();
+     $form_state_element = array();
+-    $element_type       = $element->type;
++    $element_type       = $element->element_type;
+     if (isset($form['elements'][$element_type]['element'])){
+       $form_element = $form['elements'][$element_type]['element'];
+     }
+@@ -80,7 +80,7 @@ function lpck_type_config_elements_form_validate($form, &$form_state){
+   $elements     = lpck_type_get_elements($lp_type_name);
+   foreach ($elements as $element) {
+ 
+-    $element_type = $element->type;
++    $element_type = $element->element_type;
+     if (module_hook($element->module, 'lpck_element_config_get')) {
+       if (isset($form['elements'][$element_type])){
+         $form_element = $form['elements'][$element_type]['values'];
+@@ -112,7 +112,7 @@ function lpck_type_config_elements_form_submit($form, &$form_state){
+ 
+   foreach ($elements as $element) {
+ 
+-    $element_type = $element->type;
++    $element_type = $element->element_type;
+ 
+     if (module_hook($element->module, 'lpck_element_config_get')) {
+ 
+diff --git a/lpck.api.inc b/lpck.api.inc
+index ac426f5..83a90af 100644
+--- a/lpck.api.inc
++++ b/lpck.api.inc
+@@ -52,6 +52,9 @@ function lpck_type_get_elements($lp_type_name){
+     $elements_id = array_keys($result['lpck_elements']);
+     $elements    = entity_load('lpck_elements', $elements_id);
+   }
++  if(empty($elements)){
++    $elements = ctools_export_load_object('lpck_elements', 'conditions', array('lpt_name' => $lp_type_name));
++  }
+   return $elements;
+ }
+ 
+diff --git a/lpck.install b/lpck.install
+index bc2734b..6425930 100644
+--- a/lpck.install
++++ b/lpck.install
+@@ -186,7 +186,7 @@ function lpck_schema(){
+         'default'     => '',
+         'not null'    => TRUE
+       ),
+-      'type' => array(
++      'element_type' => array(
+         'description' => 'Tipo de elemento que se agregara al tipo de Landing Page',
+         'type'        => 'varchar',
+         'length'      => 50,
+@@ -262,3 +262,17 @@ function lpck_update_7002(&$sandbox) {
+     'default'     => NULL
+   ));
+ }
++
++/**
++ * Rename field type in lpck_elements in order to support ctools export
++ */
++function lpck_update_7003(&$sandbox) {
++  // LP Type name and description attributes
++  db_change_field('lpck_elements', 'type', 'element_type', array(
++    'description' => 'Tipo de elemento que se agregara al tipo de Landing Page',
++    'type'        => 'varchar',
++    'length'      => 50,
++    'not null'    => FALSE,
++    'default'     => NULL
++  ));
++}
+diff --git a/plugins/export_ui/lpck_type_ctools_export_ui.class.php b/plugins/export_ui/lpck_type_ctools_export_ui.class.php
+index 7039f93..002c825 100644
+--- a/plugins/export_ui/lpck_type_ctools_export_ui.class.php
++++ b/plugins/export_ui/lpck_type_ctools_export_ui.class.php
+@@ -62,7 +62,7 @@ class lpck_type_ctools_export_ui extends ctools_export_ui {
+             $element->lpt_name    = $item->name;
+             $element->export_type = 0;
+           }
+-          $element->type   = $element_type;
++          $element->element_type   = $element_type;
+           $element->module = $form_elements[$element_type]['#value'];
+           lpck_element_save($element);
+ 
