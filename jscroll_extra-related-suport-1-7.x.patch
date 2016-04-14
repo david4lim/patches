@@ -1,0 +1,114 @@
+diff --git a/jscroll_extra.module b/jscroll_extra.module
+index ec7fecb..6b50b20 100644
+--- a/jscroll_extra.module
++++ b/jscroll_extra.module
+@@ -48,7 +48,7 @@ function je_next_entity_by_vocabulary($entity_type, $entity, $view_mode) {
+   foreach ($vocabularies as $vocabulary_name) {
+     $vocabulary = taxonomy_vocabulary_machine_name_load($vocabulary_name);
+     $tid = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
+-    if($tid) {
++    if ($tid) {
+       $exclude[] = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
+     }
+   }
+@@ -56,26 +56,26 @@ function je_next_entity_by_vocabulary($entity_type, $entity, $view_mode) {
+   //Obtener id's Vobularios Inclusivos
+   //@todo por ahora solo acepta un vocabulario
+   $vocabulary_name = variable_get('jscroll_extra_vocabularies_inclusives');
+-  $vocabulary      = taxonomy_vocabulary_machine_name_load($vocabulary_name);
+-  $include[]       = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
++  $vocabulary = taxonomy_vocabulary_machine_name_load($vocabulary_name);
++  $include[] = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
+ 
+ 
+   //SubQuery Inclusivo
+   $subquery = db_select('taxonomy_index', 't');
+-  $subquery->fields('t',array('nid'));
++  $subquery->fields('t', array('nid'));
+   if (variable_get('jscoll_extra_same_type', TRUE)) {
+     $subquery->innerJoin('node', 'n', 'n.nid = t.nid');
+     $subquery->condition('n.type', $entity->type);
+   }
+ 
+-  $order_referer = variable_get('jscroll_extra_order_by',0);
++  $order_referer = variable_get('jscroll_extra_order_by', 0);
+ 
+-  if($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
++  if ($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
+     $subquery->condition('n.created', $entity->created, '<');
+   }
+ 
+   $subquery->condition('t.nid', $entity->nid, '<>')
+-    ->condition('t.tid', $include, 'IN');
++      ->condition('t.tid', $include, 'IN');
+ 
+ 
+   //Query Exclusivo
+@@ -86,22 +86,30 @@ function je_next_entity_by_vocabulary($entity_type, $entity, $view_mode) {
+     $query->condition('n.type', $entity->type);
+   }
+ 
+-  if($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
++  if ($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
+     $query->condition('n.created', $entity->created, '<');
+   }
+ 
+-  if(!empty($include)) {
+-    $query->condition('t.nid',$subquery,'IN');
++  if (!empty($include)) {
++    $query->condition('t.nid', $subquery, 'IN');
+   }
+ 
+-  $query->condition('t.nid',$entity->nid,'<>');
++  if (!empty($entity->parent)) {
++    $excluded_ids = str_replace(array('x', 'p', 'shown'), '', $entity->parent);
++    $excluded_ids = explode('-', $excluded_ids);
++    $query->condition('t.nid', $excluded_ids, 'NOT IN');
++  }
++  else {
++    $entity->parent = 'p' . $entity->nid . 'shown';
++    $query->condition('t.nid', $entity->nid, '<>');
++  }
+ 
+-  if(!empty($exclude)) {
+-    $query->condition('t.tid',$exclude,'IN');
++  if (!empty($exclude)) {
++    $query->condition('t.tid', $exclude, 'IN');
+   }
+ 
+-    $query->orderBy('n.created', 'DESC')
+-    ->range(0,1);
++  $query->orderBy('n.created', 'DESC')
++      ->range(0, 1);
+ 
+   $node = $query->execute()->fetchObject();
+ 
+@@ -110,21 +118,23 @@ function je_next_entity_by_vocabulary($entity_type, $entity, $view_mode) {
+     $next['type'] = 'node';
+     $next['id'] = $node->nid;
+     $next['view_mode'] = $view_mode;
++    if (!empty($entity->parent)) {
++      $next['extra_params'] = $entity->parent;
++    }
+     return $next;
+   }
+ }
+ 
+-
+-function je_taxonomy_node_get_tid($nid, $vid){
++function je_taxonomy_node_get_tid($nid, $vid) {
+   $query = db_select('taxonomy_index', 't');
+   $query->fields('t', array('tid'));
+-  if(!empty($vid)){
++  if (!empty($vid)) {
+     $query->innerJoin('taxonomy_term_data', 'd', 'd.tid = t.tid');
+     $query->condition('d.vid', $vid);
+   }
+   $query->condition('nid', $nid)
+-    ->orderBy('created', 'DESC')
+-    ->range(0,1);
++      ->orderBy('created', 'DESC')
++      ->range(0, 1);
+   $tid = $query->execute()->fetchField();
+   return $tid;
+ }
