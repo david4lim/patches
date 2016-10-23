@@ -1,0 +1,263 @@
+diff --git a/includes/jscroll_extra.admin.inc b/includes/jscroll_extra.admin.inc
+index a3c60b3..9ce723b 100644
+--- a/includes/jscroll_extra.admin.inc
++++ b/includes/jscroll_extra.admin.inc
+@@ -10,6 +10,36 @@ function jscroll_taxonomy_admin_settings() {
+     '#type' => 'fieldset',
+     '#title' => t('General Settings'),
+   );
++
++  $fields = field_info_fields();
++  $taxonomy_reference_fields = array();
++  foreach ($fields as $field) {
++    if ($field['type'] == 'taxonomy_term_reference') {
++      $taxonomy_reference_fields[$field['field_name']] = $field['field_name'];
++    }
++  }
++  $ct_names = node_type_get_names();
++  $ct_fields = array();
++  foreach ($ct_names as $machine_name => $name) {
++    $ct_fields[$machine_name]['field_info'] = field_info_instances('node', $machine_name);
++    foreach ($ct_fields[$machine_name]['field_info'] as $key => $value) {
++      if (!empty($taxonomy_reference_fields[$key])) {
++        $ct_fields[$machine_name]['taxonomy_reference_fields'][$key] = $key;
++      }
++    }
++  }
++
++  foreach ($ct_fields as $content_type => $fields_data) {
++    if (!empty($fields_data['taxonomy_reference_fields'])) {
++      $form['jscroll_extra_settings']['jscroll_extra_tf' . $content_type] = array(
++        '#type' => 'checkboxes',
++        '#options' => $fields_data['taxonomy_reference_fields'],
++        '#title' => t($content_type . ': Get content from a term in a term reference field'),
++        '#default_value' => variable_get('jscroll_extra_tf' . $content_type, array()),
++      );
++    }
++  }
++
+   $vocabularies = taxonomy_get_vocabularies();
+   $options = array();
+   foreach ($vocabularies as $vocabulary) {
+@@ -29,23 +59,24 @@ function jscroll_taxonomy_admin_settings() {
+       '#title' => t('Enabled Vocabularies Exclusives'),
+       '#default_value' => variable_get('jscroll_extra_vocabularies_exclusives', array()),
+     );
+-
+   }
+ 
+   $form['jscroll_extra_settings']['jscroll_extra_order_by'] = array(
+     '#type' => 'radios',
+     '#title' => t('Order by Reference'),
+     '#description' => t('Most recently posted nodes come first'),
+-    '#default_value' => variable_get('jscroll_extra_order_by',0),
+-    '#options' => array( 0 => 'Site',
+-                         1 => 'Current Node'),
++    '#default_value' => variable_get('jscroll_extra_order_by', 0),
++    '#options' => array(
++      0 => 'Site',
++      1 => 'Current Node'
++    ),
+   );
+ 
+   $form['jscroll_extra_settings']['jscroll_extra_relevance'] = array(
+     '#type' => 'checkbox',
+     '#title' => t('Relevance'),
+     '#description' => t('First content with more common terms'),
+-    '#default_value' => variable_get('jscroll_extra_relevance',0),
++    '#default_value' => variable_get('jscroll_extra_relevance', 0),
+   );
+ 
+   return system_settings_form($form);
+diff --git a/jscroll_extra.module b/jscroll_extra.module
+index 0778cf7..f5000f4 100644
+--- a/jscroll_extra.module
++++ b/jscroll_extra.module
+@@ -40,38 +40,54 @@ function je_next_entity_by_vocabulary($entity_type, $entity, $view_mode) {
+   }
+   $exclude = array();
+   $include = array();
+-
++  $term_reference_fields = variable_get('jscroll_extra_tf' . $entity->type, array());
+   //Obtener id's Vobularios Exclusivos
+-  $vocabularies = variable_get('jscroll_extra_vocabularies_exclusives', array());
+-  $vocabularies = array_diff(array_values($vocabularies), array(0));
++  if (empty($term_reference_fields)) {
++    $vocabularies = variable_get('jscroll_extra_vocabularies_exclusives', array());
++    $vocabularies = array_diff(array_values($vocabularies), array(0));
++
++    foreach ($vocabularies as $vocabulary_name) {
++      $vocabulary = taxonomy_vocabulary_machine_name_load($vocabulary_name);
++      $tid = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
++      if ($tid) {
++        $exclude[] = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
++      }
++    }
+ 
+-  foreach ($vocabularies as $vocabulary_name) {
++    //Obtener id's Vobularios Inclusivos
++    //@todo por ahora solo acepta un vocabulario inclusivo
++    $vocabulary_name = variable_get('jscroll_extra_vocabularies_inclusives');
+     $vocabulary = taxonomy_vocabulary_machine_name_load($vocabulary_name);
+-    $tid = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
+-    if(!empty($tid)) {
+-      $exclude = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
++    $include[] = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
++  }
++  else {
++    foreach ($term_reference_fields as $term_reference_field) {
++      if (!empty($entity->{$term_reference_field})) {
++        $field_terms = array_shift($entity->{$term_reference_field});
++        foreach ($field_terms as $field_term) {
++          if (!empty($field_term['tid'])) {
++            $include[] = $field_term['tid'];
++          }
++        }
++      }
+     }
+   }
+ 
+-  //Obtener id's Vobularios Inclusivos
+-  //@todo por ahora solo acepta un vocabulario inclusivo
+-  $vocabulary_name = variable_get('jscroll_extra_vocabularies_inclusives');
+-  $vocabulary      = taxonomy_vocabulary_machine_name_load($vocabulary_name);
+-  $include         = je_taxonomy_node_get_tid($entity->nid, $vocabulary->vid);
+-
+   //SubQuery Inclusivo
+   $subquery = db_select('taxonomy_index', 't');
+-  $subquery->fields('t',array('nid'));
++  $subquery->fields('t', array('nid'));
+   if (variable_get('jscoll_extra_same_type', TRUE)) {
+     $subquery->innerJoin('node', 'n', 'n.nid = t.nid');
+     $subquery->condition('n.type', $entity->type);
++    if ($entity->type == 'article') {
++      $subquery->innerJoin('field_data_field_article_type', 'fdfat', 'n.nid = fdfat.entity_id');
++      $subquery->condition('fdfat.field_article_type_value', 0, '=');
++    }
+   }
+ 
+-  $order_referer = variable_get('jscroll_extra_order_by',0);
+-  $relevance     = variable_get('jscroll_extra_relevance',0);
++  $order_referer = variable_get('jscroll_extra_order_by', 0);
+ 
+-
+-  if($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
++  if ($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
+     $subquery->condition('n.created', $entity->created, '<');
+   }
+ 
+@@ -81,46 +97,40 @@ function je_next_entity_by_vocabulary($entity_type, $entity, $view_mode) {
+ 
+   //Query Exclusivo
+   $query = db_select('taxonomy_index', 't');
+-
+-  $query->fields('t',array('nid','tid','created'));
+-
+-
+-  /*Si se requiere ordenamiento por número máximo de coincidencias*/
+-  if(!empty($include) && $relevance == 1) {
+-    $in_include = implode(',',$include);
+-    $frecuency  = "( SELECT count(nid)
+-                   FROM taxonomy_index
+-                   WHERE nid = t.nid
+-                   AND tid IN (".$in_include.") )";
+-    $query->addExpression($frecuency,'counter');
+-  }
+-
+-
++  $query->fields('t');
+   if (variable_get('jscoll_extra_same_type', TRUE)) {
+     $query->innerJoin('node', 'n', 'n.nid = t.nid');
+     $query->condition('n.type', $entity->type);
+   }
+ 
+-  if($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
++  if ($order_referer == 1 || (!empty($entity->jscrollLoaded) && $order_referer == 0 )) {
+     $query->condition('n.created', $entity->created, '<');
+   }
+ 
+-  if(!empty($include)) {
+-    $query->condition('t.nid',$subquery,'IN');
++  if (!empty($include)) {
++    $query->condition('t.nid', $subquery, 'IN');
+   }
+ 
+-  $query->condition('t.nid',$entity->nid,'<>');
++  if (!empty($entity->parent)) {
++    $excluded_ids = str_replace(array('x', 'p', 'shown'), '', $entity->parent);
++    $excluded_ids = explode('-', $excluded_ids);
++    $query->condition('t.nid', $excluded_ids, 'NOT IN');
++  }
++  else {
++    $entity->parent = 'p' . $entity->nid . 'shown';
++    $query->condition('t.nid', $entity->nid, '<>');
++  }
+ 
+-  if(!empty($exclude)) {
+-    $query->condition('t.tid',$exclude,'IN');
++  if (!empty($exclude)) {
++    $query->condition('t.tid', $exclude, 'IN');
+   }
+ 
+-  if(!empty($include) && $relevance == 1) {
+-    $query->orderBy('counter', 'DESC');
++  if (!empty($exclude[0])) {
++    $query->condition('t.tid', $exclude[0], '=');
+   }
+ 
+-  $query->orderBy('n.created', 'DESC');
+-  $query->range(0,1);
++  $query->orderBy('n.created', 'DESC')
++      ->range(0, 1);
+ 
+   $node = $query->execute()->fetchObject();
+ 
+@@ -129,39 +139,23 @@ function je_next_entity_by_vocabulary($entity_type, $entity, $view_mode) {
+     $next['type'] = 'node';
+     $next['id'] = $node->nid;
+     $next['view_mode'] = $view_mode;
+-    return $next;
+-  }
+-}
+-
+-function _get_query_string(SelectQueryInterface $query) {
+-  $string = (string) $query;
+-  $arguments = $query->arguments();
+-  if (!empty($arguments) && is_array($arguments)) {
+-    foreach ($arguments as $placeholder => &$value) {
+-      if (is_string($value)) {
+-        $value = "'$value'";
+-      }
++    if (!empty($entity->parent)) {
++      $next['extra_params'] = $entity->parent;
+     }
+-    $string = strtr($string, $arguments);
++    return $next;
+   }
+-  return $string;
+ }
+ 
+-
+-function je_taxonomy_node_get_tid($nid, $vid){
++function je_taxonomy_node_get_tid($nid, $vid) {
+   $query = db_select('taxonomy_index', 't');
+   $query->fields('t', array('tid'));
+-  if(!empty($vid)){
++  if (!empty($vid)) {
+     $query->innerJoin('taxonomy_term_data', 'd', 'd.tid = t.tid');
+     $query->condition('d.vid', $vid);
+   }
+-  $query->condition('nid', $nid);
+-  $result = $query->execute();
+-  $tid = array();
+-  while($record = $result->fetchField()) {
+-    $tid[] = $record;
+-  }
++  $query->condition('nid', $nid)
++      ->orderBy('created', 'DESC')
++      ->range(0, 1);
++  $tid = $query->execute()->fetchField();
+   return $tid;
+ }
+-
+-//  echo "<pre>tid".print_r($include,TRUE)."</pre>";
