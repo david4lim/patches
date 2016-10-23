@@ -1,0 +1,205 @@
+diff --git a/includes/jscroll.theme.inc b/includes/jscroll.theme.inc
+index fb6e1a4..5ffaed9 100644
+--- a/includes/jscroll.theme.inc
++++ b/includes/jscroll.theme.inc
+@@ -12,6 +12,9 @@ function theme_jscroll_next($variables) {
+     $variables['entity_id'],
+     $variables['view_mode'],
+   );
++  if (!empty($variables['extra_params'])) {
++    $path_elements[] = $variables['extra_params'];
++  }
+   $options = array(
+     'attributes' => array(
+       'class' => array ('jscroll-next')
+diff --git a/jscroll.module b/jscroll.module
+index 4262570..fae6e89 100644
+--- a/jscroll.module
++++ b/jscroll.module
+@@ -1,4 +1,5 @@
+ <?php
++
+ define('JSCROLL_DEFAULT_OPTIONSET', 'jscroll_default');
+ 
+ /**
+@@ -96,9 +97,9 @@ function jscroll_library() {
+  * @return type
+  */
+ function jscroll_menu() {
+-  $items['jscroll_view_entity/%/%jscroll'] = array(
++  $items['jscroll_view_entity/%/%jscroll/%'] = array(
+     'page callback' => 'jscroll_view_entity',
+-    'page arguments' => array(2, 1),
++    'page arguments' => array(2, 1, 3),
+     'load arguments' => array(1),
+     'access arguments' => array('access content'),
+     'type' => MENU_CALLBACK,
+@@ -130,6 +131,7 @@ function jscroll_theme($existing, $type, $theme, $path) {
+       'entity_type' => NULL,
+       'entity_id' => NULL,
+       'view_mode' => 'full',
++      'extra_params' => array(),
+     ),
+     'file' => 'includes/jscroll.theme.inc',
+   );
+@@ -151,6 +153,9 @@ function jscroll_entity_view($entity, $type, $view_mode, $langcode) {
+       $entity->content['jscroll_next']['#entity_type'] = $next['type'];
+       $entity->content['jscroll_next']['#entity_id'] = $next['id'];
+       $entity->content['jscroll_next']['#view_mode'] = $next['view_mode'];
++      if (!empty($next['extra_params'])) {
++        $entity->content['jscroll_next']['#extra_params'] = $next['extra_params'];
++      }
+       $entity->content['jscroll_next']['#theme'] = 'jscroll_next';
+     }
+ 
+@@ -225,7 +230,7 @@ function jscroll_jscroll_next($entity_type, $entity, $view_mode) {
+ }
+ 
+ /**
+- * 
++ *
+  * @param type $page_callback_result
+  */
+ function jscroll_delivery_entity($page_callback_result) {
+@@ -248,16 +253,21 @@ function jscroll_delivery_entity($page_callback_result) {
+ }
+ 
+ /**
+- * 
++ *
+  * @param type $entity
+  * @param type $entity_type
+  * @param string $view_mode
+  * @return type
+- * 
++ *
+  * @todo Implement cache for this callback
+  */
+-function jscroll_view_entity($entity, $entity_type, $view_mode = 'full') {
++function jscroll_view_entity($entity, $entity_type, $view_mode = 'full', $related = NULL) {
+   $cid = "v" . implode("-", entity_extract_ids($entity_type, $entity)) . $view_mode;
++  if ($related) {
++    $entity->parent = $related;
++    $cid .= $related;
++  }
++  $cid = md5($cid);
+   if ($cache = cache_get($cid)) {
+     return $cache->data;
+   }
+@@ -279,7 +289,7 @@ function jscroll_view_entity($entity, $entity_type, $view_mode = 'full') {
+  * @param int $id entity ID
+  * @param string $entity_type entity type
+  * @return entity The loaded entity
+- * 
++ *
+  * @todo implement cache and drupal_static
+  */
+ function jscroll_load($id, $entity_type) {
+@@ -298,21 +308,21 @@ function jscroll_load($id, $entity_type) {
+  */
+ function jscroll_add($entity, $type, $view_mode, $next) {
+   $loaded = &drupal_static(__FUNCTION__, FALSE);
+-  if(!$loaded){
++  if (!$loaded) {
+     //Load library
+     libraries_load('jscroll');
+-  
++
+     // JavaScript Loader
+     $script = drupal_get_path('module', 'jscroll') . '/assets/js/jscroll.load.js';
+     drupal_add_js($script, array('type' => 'file', 'scope' => 'footer'));
+     unset($script);
+-    
++
+     //Load basic settings
+-    $js_settings['changeURL'] =  variable_get('jscroll_change_url', TRUE);
+-    $js_settings['updateAds'] =  variable_get('jscroll_update_ads', TRUE);
+-    $js_settings['changeCallbacks'] =  array();
++    $js_settings['changeURL'] = variable_get('jscroll_change_url', TRUE);
++    $js_settings['updateAds'] = variable_get('jscroll_update_ads', TRUE);
++    $js_settings['changeCallbacks'] = array();
+     drupal_alter('jscroll_js_settings', $js_settings);
+-    
++
+     $loaded = TRUE;
+   }
+   $optionset = jscroll_get_optionset($type, $entity, $view_mode);
+@@ -325,12 +335,12 @@ function jscroll_add($entity, $type, $view_mode, $next) {
+ }
+ 
+ /**
+- * 
++ *
+  * @param type $entity_type
+  * @param type $entity
+  * @param type $view_mode
+  * @return type
+- * 
++ *
+  * @todo document this function
+  * @todo Add cache to the function
+  */
+@@ -347,6 +357,7 @@ function jscroll_get_next_entity($entity_type, $entity, $view_mode) {
+   }
+   $next = FALSE;
+   $nexts = module_invoke_all('jscroll_next', $entity_type, $entity, $view_mode);
++  drupal_alter('jscroll_next', $nexts, $entity_type, $entity, $view_mode);
+   if (!empty($nexts)) {
+     foreach ($nexts as $key => $row) {
+       $tmp[$key] = $row['weight'];
+@@ -370,7 +381,7 @@ function jscroll_get_next_entity($entity_type, $entity, $view_mode) {
+  * @param entity $entity Current viewed entity
+  * @param string $view_mode Current entity view mode
+  * @return type
+- * 
++ *
+  * @see hook_jscroll_next
+  * @see jscroll_jscroll_next
+  */
+@@ -382,8 +393,11 @@ function jscroll_next_entity($entity_type, $entity, $view_mode) {
+   $query = new EntityFieldQuery();
+   $next_entity = $query->entityCondition('entity_type', $entity_type)
+       ->entityCondition('bundle', $entity->{$info['entity keys']['bundle']})
+-      ->propertyCondition($info['entity keys']['id'], $entity->{$info['entity keys']['id']}, '>')
+-      ->propertyOrderBy($info['entity keys']['id'], 'ASC')
++      ->propertyCondition($info['entity keys']['id'], $entity->{$info['entity keys']['id']}, '>');
++  if ($entity->{$info['entity keys']['bundle']} == 'article') {
++    $next_entity->fieldCondition('field_article_type', 'value', '0', '=');
++  }
++  $next_entity->propertyOrderBy($info['entity keys']['id'], 'ASC')
+       ->range(0, 1)
+       ->execute();
+   if ($next_entity) {
+@@ -395,12 +409,12 @@ function jscroll_next_entity($entity_type, $entity, $view_mode) {
+ }
+ 
+ /**
+- * 
++ *
+  * @param string $entity_type
+  * @param string $bundle
+  * @param string $view_mode
+  * @return boolean
+- * 
++ *
+  * @todo document this function
+  */
+ function jscroll_is_active($entity_type, $bundle, $view_mode) {
+@@ -420,7 +434,7 @@ function jscroll_is_active($entity_type, $bundle, $view_mode) {
+ }
+ 
+ /**
+- * 
++ *
+  * @param type $type
+  * @param type $entity
+  * @param type $view_mode
+@@ -432,7 +446,7 @@ function jscroll_get_optionset($type, $entity, $view_mode) {
+ }
+ 
+ /**
+- * 
++ *
+  * @param type $next
+  * @return type
+  */
